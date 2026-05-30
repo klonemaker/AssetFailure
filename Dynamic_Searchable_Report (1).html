@@ -1,0 +1,209 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic ICMS Report Search (With Highlights & Division)</title>
+    <!-- Include SheetJS to parse Excel files in the browser -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f9f9f9; }
+        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: fixed; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; word-wrap: break-word; }
+        th { background-color: #f2f2f2; position: sticky; top: 0; }
+        .controls { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 20px; align-items: flex-end; }
+        .control-group { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 150px; }
+        input[type="text"], select, input[type="file"] { padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; }
+        .remark-col { width: 50%; }
+        .header-title { margin-top: 0; }
+        .stats { margin-top: 10px; font-weight: bold; color: #555; }
+        mark { background-color: yellow; color: black; padding: 0 2px; border-radius: 2px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2 class="header-title">Dynamic ICMS Asset Failures - Search & Filter</h2>
+        <p>Please upload the cleaned Excel file (e.g., <b>Failures_Remarks_Grouped.xlsx</b>) to populate the table.</p>
+        
+        <div class="controls">
+            <div class="control-group" style="min-width: 250px;">
+                <label for="fileUpload"><b>1. Upload Excel/CSV File:</b></label>
+                <input type="file" id="fileUpload" accept=".xlsx, .xls, .csv" />
+            </div>
+            <div class="control-group" style="min-width: 250px;">
+                <label for="searchBar"><b>2. Search Remarks:</b></label>
+                <input type="text" id="searchBar" placeholder="Type keywords..." onkeyup="applyFilters()" disabled />
+            </div>
+            <div class="control-group">
+                <label for="zoneFilter"><b>3. Filter by Zone:</b></label>
+                <select id="zoneFilter" onchange="applyFilters()" disabled>
+                    <option value="All">All</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="divFilter"><b>4. Filter by Division:</b></label>
+                <select id="divFilter" onchange="applyFilters()" disabled>
+                    <option value="All">All</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="classFilter"><b>5. Filter by Classification:</b></label>
+                <select id="classFilter" onchange="applyFilters()" disabled>
+                    <option value="All">All</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="stats" id="recordCount">Records found: 0</div>
+        
+        <table id="reportTable">
+            <thead>
+                <tr>
+                    <th style="width: 7%;">Zone</th>
+                    <th style="width: 12%;">Classification</th>
+                    <th style="width: 6%;">Div.</th>
+                    <th style="width: 15%;">Date Time</th>
+                    <th class="remark-col">Remarks</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                <tr><td colspan="5" style="text-align: center;">Waiting for file upload...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        let globalData = [];
+
+        document.getElementById('fileUpload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            document.getElementById('tableBody').innerHTML = '<tr><td colspan="5" style="text-align: center;">Processing file... Please wait.</td></tr>';
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                try {
+                    const data = new Uint8Array(event.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    
+                    // Convert sheet to JSON
+                    globalData = XLSX.utils.sheet_to_json(worksheet, {defval: ""});
+                    
+                    // Enable inputs
+                    document.getElementById('searchBar').disabled = false;
+                    document.getElementById('zoneFilter').disabled = false;
+                    document.getElementById('divFilter').disabled = false;
+                    document.getElementById('classFilter').disabled = false;
+
+                    populateDropdowns();
+                    applyFilters();
+                } catch (error) {
+                    alert("Error processing file. Please ensure it is a valid Excel or CSV file.");
+                    document.getElementById('tableBody').innerHTML = '<tr><td colspan="5" style="text-align: center; color: red;">Error processing file.</td></tr>';
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        function populateDropdowns() {
+            const zones = new Set();
+            const divisions = new Set();
+            const classifications = new Set();
+
+            globalData.forEach(row => {
+                if (row['Zone']) zones.add(row['Zone'].toString().trim());
+                if (row['Div.']) divisions.add(row['Div.'].toString().trim());
+                if (row['Classification']) classifications.add(row['Classification'].toString().trim());
+            });
+
+            const zoneFilter = document.getElementById('zoneFilter');
+            const divFilter = document.getElementById('divFilter');
+            const classFilter = document.getElementById('classFilter');
+
+            zoneFilter.innerHTML = '<option value="All">All</option>';
+            divFilter.innerHTML = '<option value="All">All</option>';
+            classFilter.innerHTML = '<option value="All">All</option>';
+
+            Array.from(zones).filter(Boolean).sort().forEach(zone => {
+                zoneFilter.innerHTML += `<option value="${zone}">${zone}</option>`;
+            });
+            Array.from(divisions).filter(Boolean).sort().forEach(div => {
+                divFilter.innerHTML += `<option value="${div}">${div}</option>`;
+            });
+            Array.from(classifications).filter(Boolean).sort().forEach(cls => {
+                classFilter.innerHTML += `<option value="${cls}">${cls}</option>`;
+            });
+        }
+
+        function applyFilters() {
+            const searchInput = document.getElementById('searchBar').value.trim();
+            const searchText = searchInput.toLowerCase();
+            const zoneFilter = document.getElementById('zoneFilter').value;
+            const divFilter = document.getElementById('divFilter').value;
+            const classFilter = document.getElementById('classFilter').value;
+
+            const filteredData = globalData.filter(row => {
+                const remarks = (row['Remarks'] || "").toString().toLowerCase();
+                const zone = (row['Zone'] || "").toString().trim();
+                const div = (row['Div.'] || "").toString().trim();
+                const cls = (row['Classification'] || "").toString().trim();
+
+                const matchSearch = searchText === "" || remarks.includes(searchText);
+                const matchZone = zoneFilter === "All" || zone === zoneFilter;
+                const matchDiv = divFilter === "All" || div === divFilter;
+                const matchClass = classFilter === "All" || cls === classFilter;
+
+                return matchSearch && matchZone && matchDiv && matchClass;
+            });
+
+            renderTable(filteredData, searchInput);
+        }
+
+        function renderTable(data, searchInput) {
+            const tbody = document.getElementById('tableBody');
+            const recordCount = document.getElementById('recordCount');
+            
+            tbody.innerHTML = "";
+            recordCount.textContent = `Records found: ${data.length}`;
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No matching records found.</td></tr>';
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+
+            data.forEach(row => {
+                const tr = document.createElement('tr');
+                
+                let remarksHtml = (row['Remarks'] || "").toString();
+                
+                // Highlight logic
+                if (searchInput) {
+                    // Escape special regex characters
+                    const escapedSearchText = searchInput.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const regex = new RegExp(`(${escapedSearchText})`, "gi");
+                    remarksHtml = remarksHtml.replace(regex, '<mark>$1</mark>');
+                }
+
+                tr.innerHTML = `
+                    <td>${row['Zone'] || ""}</td>
+                    <td>${row['Classification'] || ""}</td>
+                    <td>${row['Div.'] || ""}</td>
+                    <td>${row['Start Date Time'] || ""}</td>
+                    <td>${remarksHtml}</td>
+                `;
+                
+                fragment.appendChild(tr);
+            });
+            
+            tbody.appendChild(fragment);
+        }
+    </script>
+</body>
+</html>
